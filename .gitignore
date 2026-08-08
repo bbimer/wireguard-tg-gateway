@@ -1,0 +1,14 @@
+# Credentials & Sessions
+.env
+wg_devices.json
+code_hash.json
+
+# Logs & Cache
+*.log
+__pycache__/
+*.pyc
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store

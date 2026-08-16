@@ -400,8 +400,8 @@ def sync_system_wg_conf() -> None:
         f"PrivateKey = {priv_server}",
         f"Address = {subnet}.1/24",
         f"ListenPort = {port}",
-        f"PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o {wan_iface} -j MASQUERADE",
-        f"PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o {wan_iface} -j MASQUERADE",
+        f"PostUp = iptables -I FORWARD 1 -i wg0 -j ACCEPT; iptables -I FORWARD 1 -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -s {subnet}.0/24 -o {wan_iface} -j MASQUERADE",
+        f"PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -s {subnet}.0/24 -o {wan_iface} -j MASQUERADE",
         ""
     ]
     
@@ -420,6 +420,14 @@ def sync_system_wg_conf() -> None:
         with open(conf_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
         
+        # Ensure kernel IPv4 forwarding is active
+        subprocess.run(["sysctl", "-w", "net.ipv4.ip_forward=1"], capture_output=True)
+        
+        # Ensure iptables forwarding and NAT masquerade rules are present
+        subprocess.run("iptables -C FORWARD -i wg0 -j ACCEPT 2>/dev/null || iptables -I FORWARD 1 -i wg0 -j ACCEPT", shell=True)
+        subprocess.run("iptables -C FORWARD -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -I FORWARD 1 -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT", shell=True)
+        subprocess.run(f"iptables -t nat -C POSTROUTING -s {subnet}.0/24 -o {wan_iface} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s {subnet}.0/24 -o {wan_iface} -j MASQUERADE", shell=True)
+
         # Check if wg0 interface is already active
         ip_check = subprocess.run(["ip", "link", "show", "wg0"], capture_output=True, text=True)
         if ip_check.returncode == 0:
@@ -442,3 +450,4 @@ def sync_system_wg_conf() -> None:
             subprocess.run(["wg-quick", "up", "wg0"], capture_output=True)
     except Exception as e:
         print(f"[!] Error syncing /etc/wireguard/wg0.conf: {e}")
+
